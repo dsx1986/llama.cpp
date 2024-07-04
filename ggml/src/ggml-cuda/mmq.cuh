@@ -60,12 +60,16 @@ static constexpr __device__ int get_mmq_x_max_device() {
 }
 
 static constexpr int get_mmq_y_host(const int cc) {
-    return int8_mma_available(cc) || cc >= CC_VOLTA ? 128 : 64;
+    return cc >= CC_OFFSET_AMD ? (cc == CC_RDNA1 ? 64 : 128) : (cc >= CC_VOLTA ? 128 : 64);
 }
 
 static constexpr __device__ int get_mmq_y_device() {
 #if defined(GGML_USE_HIPBLAS) && defined(__HIP_PLATFORM_AMD__)
+#if defined(RDNA1)
+    return 64;
+#else
     return 128;
+#endif // defined RDNA1
 #else
 #if __CUDA_ARCH__ >= CC_VOLTA
     return 128;
@@ -2259,9 +2263,9 @@ static __device__ void mul_mat_q_process_tile(
 
 template <ggml_type type, int mmq_x, int nwarps, bool need_check>
 #if defined(GGML_USE_HIPBLAS) && defined(__HIP_PLATFORM_AMD__)
-#if defined(RDNA3) || defined(RDNA2)
+#if defined(RDNA3) || defined(RDNA2) || defined(RDNA1)
     __launch_bounds__(WARP_SIZE*nwarps, 2)
-#endif // defined(RDNA3) || defined(RDNA2)
+#endif // defined(RDNA3) || defined(RDNA2) || defined(RDNA1)
 #else
 #if __CUDA_ARCH__ >= CC_VOLTA
     __launch_bounds__(WARP_SIZE*nwarps, 1)
@@ -2475,7 +2479,7 @@ static void launch_mul_mat_q(ggml_backend_cuda_context & ctx, const mmq_args & a
 
     const dim3 block_nums_mmq(nsm, 1, 1);
 
-    ggml_cuda_pool & pool = ctx.pool();
+    ggml_cuda_pool & pool = ctx.pool(id);
     ggml_cuda_pool_alloc<float> tmp_fixup(pool, block_nums_mmq.x * mmq_x*mmq_y);
 
     if (args.ne01 % mmq_y == 0) {
